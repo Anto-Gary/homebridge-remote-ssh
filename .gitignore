@@ -203,3 +203,13 @@ fabric.properties
 # Android studio 3.1+ serialized cache file
 .idea/caches/build_file_checksums.ser
 
+
+
+# 1. ignore everything inside the folder
+.homebridge-debug/*
+
+# 2. but keep the one file
+!.homebridge-debug/config.json
+
+# 3. to keep the folder itself in the index you must also un-ignore it
+!.homebridge-debug/

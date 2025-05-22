@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug Homebridge (with UI & auto-reload)",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "nodemon",
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "restart": true,
+        "internalConsoleOptions": "neverOpen",
+        "preLaunchTask": "tsc: watch"
+      }
+    ]
+  }

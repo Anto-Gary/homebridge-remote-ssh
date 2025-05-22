@@ -1,10 +1,6 @@
 {
-  "watch": ["src"],
-  "ext": "ts",
-  "ignore": [],
-  "exec": "tsc && homebridge -I -D",
-  "signal": "SIGTERM",
-  "env": {
-    "NODE_OPTIONS": "--trace-warnings"
-  }
+  "watch": ["dist"],
+  "ext": "js",
+  "delay": "2s",
+  "exec": "node --inspect=9229 node_modules/.bin/homebridge -D -P dist -U ./.homebridge-debug -C ./.homebridge-debug/config.json"
 }

@@ -1,0 +1,17 @@
+{
+    "bridge": {
+      "name": "Homebridge-Debug",
+      "username": "CC:22:3D:E3:CE:30",
+      "port": 51826,
+      "pin": "031-45-154"
+    },
+    "accessories": [],
+    "platforms": [
+      {
+        "platform": "config",
+        "name": "Config",
+        "port": 8581,
+        "restart": false
+      }
+    ]
+  }
