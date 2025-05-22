@@ -109,3 +109,15 @@ Use the web interface to:
     Enables live reload + debugging without restarting the Pi
 
     Gives you access to the web UI for easy testing
+
+
+
+* sometimes vscode leaves zombie processes running after stopping debugger, which causes issues when starting debugger again
+  * there should be 0 nodemon or homebridge processes running when starting the debugger. if getting weird issues, run these commands.
+    ```bash 
+      # find processes
+      ps -ef | grep -E 'homebridge|nodemon|ssh'
+
+      # graceful SIGTERM to everything that is nodemon OR homebridge OR tee
+      ps -eo pid,command | grep -E '[n]odemon|[h]omebridge|[t]ee' | awk '{print $1}' | xargs -r kill
+    ```

@@ -11,7 +11,11 @@
         "platform": "config",
         "name": "Config",
         "port": 8581,
-        "restart": false
+        "restart": false,
+        "log": {
+          "method": "file",
+          "path": "homebridge.log"
+        }
       }
     ]
   }
