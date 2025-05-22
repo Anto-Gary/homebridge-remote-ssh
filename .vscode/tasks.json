@@ -6,17 +6,7 @@
       "type": "shell",
       "command": "npm run watch",
       "isBackground": true,
-      "problemMatcher": {
-        "owner": "typescript",
-        "source": "ts",
-        "applyTo": "allDocuments",
-        "pattern": "$tsc",
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "Starting compilation in watch mode",
-          "endsPattern": "Watching for file changes\\."
-        }
-      }
+      "problemMatcher": "$tsc-watch"          /* ← replaced custom block */
     }
   ]
 }

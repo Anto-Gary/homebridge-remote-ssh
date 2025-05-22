@@ -122,3 +122,72 @@ Use the web interface to:
       # graceful SIGTERM to everything that is nodemon OR homebridge OR tee
       ps -eo pid,command | grep -E '[n]odemon|[h]omebridge' | awk '{print $1}' | xargs -r kill
     ```
+
+
+  ```json
+{
+  "bridge": {...},
+  "platforms": {...},
+
+  "accessories": [
+    {
+      "accessory": "SSH",
+      "name": "Basement Hack Pro",
+      "on": "osascript -e 'tell application \"Spotify\" to play'",
+      "off": "osascript -e 'tell application \"Spotify\" to pause'",
+      "state": "osascript -e 'tell application \"Spotify\" to get player state'",
+      "on_value": "playing",
+      "exact_match": false,
+      "ssh": {
+        "user": "",
+        "host": "",
+        "port": 22,
+        "password": "",
+        "key": "/home/pi/.ssh/id_rsa"
+      }
+    }
+  ]
+}
+  ```
+
+### HOW DEBUGGING ACTUALLY WORKS
+---
+  * 2 debug sessions launch
+  * one to watch for changes in /dist & other to launch homebridge
+  * when changes are made to files in /src folder, nodemon recompiles /dist and homebrige reloads
+
+
+
+  
+
+## 🕵️‍♂️ Full Hot-Reload Timeline
+
+Below is **every event** that occurs from pressing ▶ / **F5** in VS Code to the moment your updated code is running again after a save.
+
+| # | Stage | Who triggers it | What actually happens |
+|---|-------|-----------------|-----------------------|
+| **1** | Launch clicked | **VS Code Debugger** | Reads `.vscode/launch.json`, finds `preLaunchTask: "tsc: watch"`. |
+| **2** | Task spawn | **VS Code Tasks** | Opens an integrated terminal and executes `npm run watch`. |
+| **3** | First compile | **`tsc -w`** | TypeScript performs a clean build:<br>• Reads `tsconfig.json`<br>• Transpiles `src/**/*.ts` → `dist/**/*.js`<br>• Prints `Starting compilation in watch mode`. |
+| **4** | Ready signal | **Problem-matcher `$tsc-watch`** | Watches terminal output; when it sees `Watching for file changes`, fires the “background-end” event. |
+| **5** | Task complete | **VS Code** | Marks `tsc: watch` as *ready but still running*; clears the “Running preLaunchTask” spinner. |
+| **6** | Nodemon launch | **VS Code Debugger** | Executes `runtimeExecutable: "nodemon"` with `--inspect` command from `nodemon.json`. |
+| **7** | Prepare log dir | **Shell wrapper in `exec`** | `mkdir -p ./.homebridge-debug` (ensures persistence folder exists). |
+| **8** | Homebridge spawn | **Nodemon** | Runs:<br>`node --inspect=9229 node_modules/.bin/homebridge -D -P dist -U ./.homebridge-debug -C ./.homebridge-debug/config.json` |
+| **9** | Inspector open | **Node (v14+)** | Listens on `ws://127.0.0.1:9229` for DevTools/debugger connections. |
+| **10** | Child attach | **autoAttachChildProcesses** | VS Code sees a new Node process with an inspector port → attaches; toolbar appears; breakpoints are now live. |
+| **11** | HAP bind | **Homebridge** | Reads plugin from `dist/`, binds HAP server on port `51826`, advertises via mDNS. |
+| **12** | UI available | **homebridge-config-ui-x** | Binds HTTP server on `8581`, starts tailing `homebridge.log`. |
+| **13** | Edit & save | **You + TextMate / Monaco** | You press ⌘S in a `.ts` file. |
+| **14** | Incremental compile | **`tsc -w`** | Rebuilds **only** the changed file and its dependents, writes new JS into `dist/`. |
+| **15** | File change event | **nodemon (chokidar)** | Detects modification in `dist/` that matches `"watch": ["dist"]`. |
+| **16** | Graceful shutdown | **Nodemon** | Sends SIGTERM to the running Homebridge PID. Homebridge: <br>• Unpublishes mDNS<br>• Closes sockets<br>• Exits. |
+| **17** | Port release delay | **Nodemon** | Waits `delay: "1.5s"` to ensure port 51826 is free. |
+| **18** | Restart | **Nodemon** | Re-executes the *same* `node --inspect=9229 …` command, spawning a **new** Homebridge process. |
+| **19** | Re-attach | **VS Code debug adapter** | autoAttach sees the old PID exit and a new inspector open on 9229 → re-attaches instantly; breakpoints remain valid. |
+| **20** | Loop | — | Steps 11 → 19 repeat every time you save another file until you click the **■ Stop** button. |
+
+> **Key takeaway:** VS Code controls only two things:  
+> 1. The TypeScript watcher (via **Tasks**)  
+> 2. Nodemon (via **Debugger**)  
+> Everything else—recompilation, restart, re-attach—flows automatically through these two services.

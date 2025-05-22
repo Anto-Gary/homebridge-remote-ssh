@@ -1,16 +1,18 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Debug Homebridge (with UI & auto-reload)",
-        "type": "node",
-        "request": "launch",
-        "runtimeExecutable": "nodemon",
-        "cwd": "${workspaceFolder}",
-        "console": "integratedTerminal",
-        "restart": true,
-        "internalConsoleOptions": "neverOpen",
-        "preLaunchTask": "tsc: watch"
-      }
-    ]
-  }
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Homebridge (auto-reload)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "nodemon",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "preLaunchTask": "tsc: watch",
+
+      "autoAttachChildProcesses": true,   // 👈 follow the Homebridge child
+      "trace": "autoAttach"               // optional: debug-adapter logs
+    }
+  ]
+}
