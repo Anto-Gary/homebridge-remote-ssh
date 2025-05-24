@@ -11,7 +11,11 @@
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
       "autoAttachChildProcesses": true,
-      "trace": "autoAttach"
+      "trace": "autoAttach",
+      "sourceMaps": true,
+      "outFiles": [
+        "${workspaceFolder}/node_modules/homebridge-remote-ssh/**/*.js"
+      ],
     }
   ]
 }

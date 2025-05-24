@@ -145,6 +145,21 @@ Use the web interface to:
         "password": "",
         "key": "/home/pi/.ssh/id_rsa"
       }
+    },
+    // tail -f ~/me/timestamps.log file on remote machine & watch timestamps be added when turning on from home app
+    {
+      "accessory": "SSH",
+      "name": "Timestamp Logger",
+      "on": "mkdir -p ~/me && date +\"%Y-%m-%dT%H:%M:%SZ\" >> ~/me/timestamps.log",
+      "off": "",
+      "exact_match": false,
+      "ssh": {
+          "user": "",
+          "host": "pihole4.local",
+          "port": 22,
+          "password": "",
+          "key": "~/.ssh/pihole4_id_rsa"
+      }
     }
   ]
 }
