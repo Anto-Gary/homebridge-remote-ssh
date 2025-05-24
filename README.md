@@ -4,114 +4,149 @@ This setup provides a full edit–build–run–debug workflow in VS Code for de
 
 ---
 
-## 🔧 Project Files Overview
+## 🔧 File Roles in the Debug Workflow
 
-### `package.json`
-Defines:
-- Your plugin’s metadata
-- Runtime dependencies (`homebridge`, `homebridge-config-ui-x`)
-- Dev tools (`typescript`, `nodemon`)
-- NPM scripts:
-  - `npm run build` – compiles TypeScript once
-  - `npm run watch` – compiles continuously on file save
+- **.vscode/launch.json**  
+  Defines how VS Code starts the debug session on F5:  
+  1. Runs the TS watch task  
+  2. Launches `nodemon` to monitor changes  
+  3. Attaches the debugger to the Homebridge process
 
-### `tsconfig.json`
-Tells the TypeScript compiler:
-- Input is in `src/`
-- Output goes to `dist/`
-- Emit declaration files
-- Use strict typing and CommonJS modules
+- **.vscode/tasks.json**  
+  Defines the background task for TypeScript:  
+  - Runs `npm run watch` (`tsc -w`)  
+  - Continuously compiles `.ts` → `.js` + sourcemaps without blocking the editor
 
-### `.vscode/tasks.json`
-Defines a **background watch task** for VS Code that:
-- Runs `npm run watch`
-- Ties into the Problems tab using `tsc` error matching
-- Notifies VS Code when the TypeScript watcher is ready
+- **tsconfig.json**  
+  Configures the TypeScript compiler:  
+  - `rootDir`: where your `.ts` source files live  
+  - `outDir`: where compiled `.js` + `.map` files are emitted (into `node_modules/homebridge-remote-ssh`)  
+  - Language target, module format, and other compile options
 
-### `.vscode/launch.json`
-Defines a debug config that:
-- Uses `nodemon` as the launcher
-- Attaches VS Code's debugger via `--inspect`
-- Automatically runs the TypeScript watch task before launching
-- Restarts the debug session when your code changes
+- **package.json**  
+  Centralizes your NPM scripts and plugin metadata:  
+  - `build`: cleans old output, compiles TS, copies `package.json` into the plugin folder  
+  - `watch`: starts the TS watcher (`tsc -w`)  
+  - `debug:hb`: runs `build`, ensures the debug directory, and launches Homebridge under `--inspect`
 
-### `nodemon.json`
-Configures `nodemon` to:
-- Watch `dist/` for rebuilt files
-- Delay briefly before restarting (to avoid mDNS race conditions)
-- Launch Homebridge using:
-  - `node --inspect=9229 node_modules/.bin/homebridge -D -P dist -U ./.homebridge-debug -C ./.homebridge-debug/config.json`
-- The log output is redirected to a file for the Config UI to display
-
-### `.homebridge-debug/config.json`
-A Homebridge config used **only for debugging**:
-- Has a unique `bridge.name`, `username`, `port`, and `pin`
-- Includes the Config UI plugin on port `8581`
-- Sets `"restart": false` to avoid conflicts with nodemon
-- Points to the log file (`.homebridge-debug/homebridge.log`)
+- **nodemon.json**  
+  Tells Nodemon which files to watch and how to restart:  
+  - `watch`: points at your plugin’s compiled JS files  
+  - `ext`: triggers on `.js` changes  
+  - `exec`: runs `npm run debug:hb` on each change  
+  - `signal`/`delay`/`legacyWatch`: ensure a clean, reliable restart
 
 ---
 
-## ▶ How to Use
+### End-to-End Flow
 
-### ✅ Step 1: Install dependencies and start TypeScript watch
-```bash
-npm install
-npm run watch
-```
-This compiles your src/ folder into dist/ and keeps watching for changes.
+1. **F5** → VS Code runs `tsc: watch` via `tasks.json`.  
+2. **VS Code** → starts `nodemon` via `launch.json`.  
+3. **TS watcher** → emits new JS in `node_modules/homebridge-remote-ssh` per `tsconfig.json`.  
+4. **nodemon** → sees JS change, runs `debug:hb` (from `package.json`).  
+5. **Homebridge** → restarts under the debugger, loading your updated plugin and honoring breakpoints.
+
+---
+
+### Here’s exactly what happens, step by step, from the moment you press F5 to when a TypeScript breakpoint in your accessory code fires:
+
+    1. You press F5 in VS Code
+
+        * VS Code sees your launch configuration and first runs the specified preLaunchTask.
+
+    2. Pre-launch task kicks off “npm run watch”
+
+        * Under the hood this is tsc -w.
+
+        * The TypeScript compiler in watch mode compiles all .ts files in src/ into .js+.map files in node_modules/homebridge-remote-ssh/, and then sits idle waiting for file-save events.
+
+    3. VS Code then invokes nodemon
+
+        * Because your launch.json uses runtimeExecutable: "nodemon".
+
+        * Nodemon reads nodemon.json, sees it should watch node_modules/homebridge-remote-ssh/**/*.js and, on any change, run npm run debug:hb.
+
+    4. Initial nodemon run (first launch)
+
+        * Even before any changes, nodemon fires npm run debug:hb once to get Homebridge started.
+
+    5. npm run debug:hb executes
+
+        a. Build step
+
+            - Runs your build script:
+
+                * Deletes any old files under node_modules/homebridge-remote-ssh/.
+
+                * Does a fresh tsc compile of src/*.ts → node_modules/homebridge-remote-ssh/*.js + *.map.
+
+                * Copies your root package.json into that plugin folder so Homebridge sees its main and metadata.
+
+        b. Prepare debug dir
+
+            * Ensures the folder homebridge-debug/ exists for Homebridge to use as its “user” directory.
+
+        c. Launch Homebridge
+
+            * Runs the Homebridge binary with --inspect=9229, in insecure/debug mode, pointing its -U flag at homebridge-debug (so it loads your freshly-built plugin).
+
+            * All logs stream into homebridge-debug/homebridge.log.
+
+        d. nodemon now holds that Homebridge process
+
+            * nodemon proxies SIGTERM to it when it needs to restart.
+
+    6 .Homebridge startup sequence
+
+        * Homebridge reads homebridge-debug/config.json, sees your accessory entry for “homebridge-remote-ssh”.
+
+        * It reads node_modules/homebridge-remote-ssh/package.json → finds "main": "accessory.js" → loads accessory.js.
+
+        * Because you compiled with source maps, the accessory.js has a link back to accessory.ts.
+
+    7. Debugger attaches
+
+        * VS Code’s debug adapter sees the --inspect=9229 flag and connects its debugger socket.
+
+        * Because you set "autoAttachChildProcesses": true, if Homebridge spawns any child processes, you’d catch those too.
+
+    8. You set a breakpoint in src/accessory.ts
+
+        * VS Code shows the red dot in the TS file.
+
+        Under the covers it maps that location to the corresponding line in the generated .js via the source map.
+
+    9. Trigger your code path
+
+        * For example, flip the switch in the Home app or Homebridge UI.
+
+        Homebridge invokes your plugin’s constructor or setState/getState method in accessory.ts.
+
+    10. Breakpoint hits
+
+        * The JS runtime pauses at the mapped JS line.
+
+        * VS Code, via the source map, highlights the equivalent TS line in your accessory.ts.
+
+        * You can now inspect variables, step in/out, and watch your TypeScript code execute as if Node were running it directly.
+
+Key points that make it work:
+
+    * Continuous TS watch ensures every save rebuilds immediately into the plugin folder.
+
+    * nodemon wraps your build+launch script so every new build triggers a full Homebridge restart.
+
+    * Source maps let the debugger translate between the emitted JS and original TS.
+
+   * --inspect opens the debug port and VS Code auto-attaches to that port.
+
+Whenever you save a .ts in src/, nodemon will tear down the old Homebridge, rebuild your plugin, restart Homebridge under the debugger, and you can step right back into your updated code without leaving VS Code.
 
 
-### ✅ Step 2: Start the debugger in VS Code
-
-    Open this folder in VS Code
-
-    Open the Run & Debug tab
-
-    Select Debug Homebridge (with UI & auto-reload)
-
-    Click ▶ or press F5
-
-This launches Homebridge using nodemon with the debugger attached.
 
 
-
-### ✅ Step 3: Test through the Homebridge Config UI
-
-In your browser, go to:
-
-http://{{raspberrypi}}:8581
-
-Use the web interface to:
-
-    View accessory state
-
-    Trigger platform behavior
-
-    Observe logs and hit breakpoints in VS Code
-
-🧪 Typical Development Workflow
-
-    Edit your code in src/
-
-    tsc -w rebuilds to dist/
-
-    Nodemon restarts Homebridge
-
-    Breakpoints in VS Code hit automatically
-
-✅ Why This Setup Works
-
-    Keeps your plugin code completely separate from your production Homebridge
-
-    Avoids permission issues and systemd interference
-
-    Enables live reload + debugging without restarting the Pi
-
-    Gives you access to the web UI for easy testing
-
-
-
+### NOTES
+---
 * sometimes vscode leaves zombie processes running after stopping debugger, which causes issues when starting debugger again
   * there should be 0 nodemon or homebridge processes running when starting the debugger. if getting weird issues, run these commands. 
   * not doing this may cause `homebridge` to use the `./homebridge-debug/config.json` file when starting the service using `systemctl start homebridge` after a debug session
@@ -170,39 +205,3 @@ Use the web interface to:
   * 2 debug sessions launch
   * one to watch for changes in /dist & other to launch homebridge
   * when changes are made to files in /src folder, nodemon recompiles /dist and homebrige reloads
-
-
-
-  
-
-## 🕵️‍♂️ Full Hot-Reload Timeline
-
-Below is **every event** that occurs from pressing ▶ / **F5** in VS Code to the moment your updated code is running again after a save.
-
-| # | Stage | Who triggers it | What actually happens |
-|---|-------|-----------------|-----------------------|
-| **1** | Launch clicked | **VS Code Debugger** | Reads `.vscode/launch.json`, finds `preLaunchTask: "tsc: watch"`. |
-| **2** | Task spawn | **VS Code Tasks** | Opens an integrated terminal and executes `npm run watch`. |
-| **3** | First compile | **`tsc -w`** | TypeScript performs a clean build:<br>• Reads `tsconfig.json`<br>• Transpiles `src/**/*.ts` → `dist/**/*.js`<br>• Prints `Starting compilation in watch mode`. |
-| **4** | Ready signal | **Problem-matcher `$tsc-watch`** | Watches terminal output; when it sees `Watching for file changes`, fires the “background-end” event. |
-| **5** | Task complete | **VS Code** | Marks `tsc: watch` as *ready but still running*; clears the “Running preLaunchTask” spinner. |
-| **6** | Nodemon launch | **VS Code Debugger** | Executes `runtimeExecutable: "nodemon"` with `--inspect` command from `nodemon.json`. |
-| **7** | Prepare log dir | **Shell wrapper in `exec`** | `mkdir -p ./.homebridge-debug` (ensures persistence folder exists). |
-| **8** | Homebridge spawn | **Nodemon** | Runs:<br>`node --inspect=9229 node_modules/.bin/homebridge -D -P dist -U ./.homebridge-debug -C ./.homebridge-debug/config.json` |
-| **9** | Inspector open | **Node (v14+)** | Listens on `ws://127.0.0.1:9229` for DevTools/debugger connections. |
-| **10** | Child attach | **autoAttachChildProcesses** | VS Code sees a new Node process with an inspector port → attaches; toolbar appears; breakpoints are now live. |
-| **11** | HAP bind | **Homebridge** | Reads plugin from `dist/`, binds HAP server on port `51826`, advertises via mDNS. |
-| **12** | UI available | **homebridge-config-ui-x** | Binds HTTP server on `8581`, starts tailing `homebridge.log`. |
-| **13** | Edit & save | **You + TextMate / Monaco** | You press ⌘S in a `.ts` file. |
-| **14** | Incremental compile | **`tsc -w`** | Rebuilds **only** the changed file and its dependents, writes new JS into `dist/`. |
-| **15** | File change event | **nodemon (chokidar)** | Detects modification in `dist/` that matches `"watch": ["dist"]`. |
-| **16** | Graceful shutdown | **Nodemon** | Sends SIGTERM to the running Homebridge PID. Homebridge: <br>• Unpublishes mDNS<br>• Closes sockets<br>• Exits. |
-| **17** | Port release delay | **Nodemon** | Waits `delay: "1.5s"` to ensure port 51826 is free. |
-| **18** | Restart | **Nodemon** | Re-executes the *same* `node --inspect=9229 …` command, spawning a **new** Homebridge process. |
-| **19** | Re-attach | **VS Code debug adapter** | autoAttach sees the old PID exit and a new inspector open on 9229 → re-attaches instantly; breakpoints remain valid. |
-| **20** | Loop | — | Steps 11 → 19 repeat every time you save another file until you click the **■ Stop** button. |
-
-> **Key takeaway:** VS Code controls only two things:  
-> 1. The TypeScript watcher (via **Tasks**)  
-> 2. Nodemon (via **Debugger**)  
-> Everything else—recompilation, restart, re-attach—flows automatically through these two services.
