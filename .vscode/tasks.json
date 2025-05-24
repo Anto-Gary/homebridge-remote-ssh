@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "npm run watch",
       "isBackground": true,
-      "problemMatcher": "$tsc-watch"          /* ← replaced custom block */
+      "problemMatcher": "$tsc-watch"
     }
   ]
 }

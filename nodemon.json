@@ -1,9 +1,7 @@
 {
-  "watch": [
-    "dist"
-  ],
+  "watch": ["node_modules/homebridge-remote-ssh/**/*.js"],
   "ext": "js",
   "signal": "SIGTERM",
   "delay": "1.5s",
-  "exec": "bash -c 'mkdir -p ./.homebridge-debug && node --inspect=9229 node_modules/.bin/homebridge -I -D -P dist -U ./.homebridge-debug -C ./.homebridge-debug/config.json 2>&1 | tee -a ./.homebridge-debug/homebridge.log'"
+  "exec": "npm run debug:hb"
 }

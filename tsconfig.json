@@ -2,21 +2,13 @@
   "compilerOptions": {
     "target": "ES2018",
     "module": "commonjs",
-    "lib": [
-      "ES2015",
-      "ES2016",
-      "ES2017",
-      "ES2018"
-    ],
+    "lib": ["ES2015","ES2016","ES2017","ES2018"],
     "sourceMap": true,
     "rootDir": "src",
-    "outDir": "dist",
-
+    "outDir": "node_modules/homebridge-remote-ssh",
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

@@ -2,6 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "preLaunchTask": "tsc: watch",
       "name": "Debug Homebridge (auto-reload)",
       "type": "node",
       "request": "launch",
@@ -9,10 +10,8 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
-      "preLaunchTask": "tsc: watch",
-
-      "autoAttachChildProcesses": true,   // 👈 follow the Homebridge child
-      "trace": "autoAttach"               // optional: debug-adapter logs
+      "autoAttachChildProcesses": true,
+      "trace": "autoAttach"
     }
   ]
 }

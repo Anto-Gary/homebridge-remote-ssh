@@ -1,35 +1,15 @@
 {
   "name": "homebridge-remote-ssh",
   "version": "1.0.2",
-  "description": "SSH plugin for homebridge: https://github.com/nfarina/homebridge",
-  "main": "dist/accessory.js",
-  "license": "MIT",
-  "keywords": [
-    "homebridge-plugin"
-  ],
+  "description": "SSH plugin for Homebridge",
+  "main": "accessory.js",
+  "keywords": ["homebridge-plugin"],
+  "engines": { "homebridge": ">=1.0.0" },
   "scripts": {
-    "clean": "rimraf ./dist",
-    "build": "rimraf ./dist && tsc",
-    "prepublishOnly": "npm run build",
-    "postpublish": "npm run clean",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "watch": "tsc -w --preserveWatchOutput"
-    },
-  "author": {
-    "name": "Gary Tietjen"
-  },
-  "engines": {
-    "homebridge": ">=1.0.0"
-  },
-  "files": [
-    "dist"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git://github.com/garytee/homebridge-remote-ssh.git"
-  },
-  "bugs": {
-    "url": "http://github.com/garytee/homebridge-remote-ssh/issues"
+    "clean": "rimraf node_modules/homebridge-remote-ssh",
+    "build": "npm run clean && tsc && cp package.json node_modules/homebridge-remote-ssh/",
+    "watch": "tsc -w --preserveWatchOutput",
+    "debug:hb": "npm run build && mkdir -p ./.homebridge-debug && node --inspect=9229 node_modules/.bin/homebridge -I -D -U ./.homebridge-debug -C ./.homebridge-debug/config.json 2>&1 | tee -a ./.homebridge-debug/homebridge.log"
   },
   "dependencies": {
     "object-assign": "^4.1.1",
