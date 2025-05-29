@@ -10,35 +10,14 @@ import {
   Logging,
   Service,
 } from "homebridge"
-import ssh from "remote-ssh-exec"
-import assign from "object-assign"
+import { Client, ConnectConfig } from "ssh2"
 
-/*
- * IMPORTANT NOTICE
- *
- * One thing you need to take care of is, that you never ever ever import anything directly from the "homebridge" module (or the "hap-nodejs" module).
- * The above import block may seem like, that we do exactly that, but actually those imports are only used for types and interfaces
- * and will disappear once the code is compiled to Javascript.
- * In fact you can check that by running `npm run build` and opening the compiled Javascript file in the `dist` folder.
- * You will notice that the file does not contain a `... = require("homebridge");` statement anywhere in the code.
- *
- * The contents of the above import statement MUST ONLY be used for type annotation or accessing things like CONST ENUMS,
- * which is a special case as they get replaced by the actual value and do not remain as a reference in the compiled code.
- * Meaning normal enums are bad, const enums can be used.
- *
- * You MUST NOT import anything else which remains as a reference in the code, as this will result in
- * a `... = require("homebridge");` to be compiled into the final Javascript code.
- * This typically leads to unexpected behavior at runtime, as in many cases it won't be able to find the module
- * or will import another instance of homebridge causing collisions.
- *
- * To mitigate this the {@link API | Homebridge API} exposes the whole suite of HAP-NodeJS inside the `hap` property
- * of the api object, which can be acquired for example in the initializer function. This reference can be stored
- * like this for example and used to access all exported variables and classes from HAP-NodeJS.
- */
+// Store reference to HAP API when Homebridge loads the plugin
 let hap: HAP
 
-/*
- * Initializer function called when the plugin is loaded.
+/**
+ * Entry point: Homebridge calls this when the plugin is loaded.
+ * We store the HAP API and register our SSH accessory class.
  */
 export = (api: API) => {
   hap = api.hap
@@ -46,123 +25,200 @@ export = (api: API) => {
 }
 
 class SshAccessory implements AccessoryPlugin {
+  // Internal state tracking whether the accessory is "on"
   private powerOn = false
+
+  // Configurable properties set from config.json
   private readonly log: Logging
   private readonly name: string
-  private readonly service: string
   private readonly onCommand: string
   private readonly offCommand: string
   private readonly stateCommand: string
   private readonly onValue: string
-  private readonly exactMatch: string
-  private readonly ssh: string
+  private readonly exactMatch: boolean
+  private readonly sshConfig: ConnectConfig
+
+  // HomeKit service definitions
   private readonly switchService: Service
   private readonly informationService: Service
 
-  matchesString(match: string): boolean {
-    if (this.exactMatch) {
-      return match === this.onValue
-    } else {
-      return match.indexOf(this.onValue) > -1
-    }
-  }
-
-  setState = (
-    powerOn: CharacteristicValue,
-    callback: CharacteristicSetCallback
-  ) => {
-    let accessory = this as any
-    let state = powerOn ? "on" : "off"
-    let prop = state + "Command"
-    let command = accessory[prop]
-    let stream = ssh(command, accessory.ssh)
-    stream.on("error", function (err: any) {
-      accessory.log("Error: " + err)
-      callback(
-        err || new Error("Error setting " + accessory.name + " to " + state)
-      )
-    })
-    stream.on("finish", function () {
-      accessory.log("Set " + accessory.name + " to " + state)
-      callback(undefined)
-    })
-  }
-
-
-  getState = (callback: CharacteristicGetCallback) => {
-    let accessory = this as any
-    let stream = ssh(accessory.stateCommand, accessory.ssh)
-    stream.on("error", function (err: any) {
-      accessory.log("Error: " + err)
-      callback(
-        err || new Error("Error getting " + accessory.name + " state")
-      )
-    }).on("data", function (data: any) {
-      let match = data.toString().match(accessory.matchesString)
-      let state = data.toString("utf-8").trim().toLowerCase()
-
-      if (match) {
-        accessory.log("State of " + accessory.name + " is " + accessory.onValue)
-        callback(undefined, accessory.powerOn)
-      } else {
-        accessory.log("State of " + accessory.name + " is " + state)
-      callback(undefined, accessory.matchesString(state))
-      }
-    }).on("finish", function () {
-      accessory.log("Finished getting " + accessory.name + " state")
-    }).on("close", function () {
-      accessory.log("Closed " + accessory.name + " state")
-    }).on("end", function () {
-      accessory.log("Ended " + accessory.name + " state")
-    })
-  }
-
+  /**
+   * Constructor: initializes configuration, services, and SSH connection settings.
+   * Does NOT run any commands yet — that happens later in getServices().
+   */
   constructor(log: Logging, config: AccessoryConfig, api: API) {
     this.log = log
-    this.service = "Switch"
-    this.name = config["name"]
-    this.onCommand = config["on"]
-    this.offCommand = config["off"]
-    this.stateCommand = config["state"]
-    this.onValue = config["on_value"] || "playing"
-    this.onValue = this.onValue.trim().toLowerCase()
-    this.exactMatch = config["exact_match"] || true
-    this.ssh = assign(
-      {
-        user: config["user"],
-        host: config["host"],
-        password: config["password"],
-        key: config["key"],
-      },
-      config["ssh"]
-    )
+    this.name = config.name
+    this.onCommand = config.on
+    this.offCommand = config.off
+    this.stateCommand = config.state
+    this.onValue = (config.on_value || "playing").trim().toLowerCase()
+    this.exactMatch = config.exact_match ?? true
+
+    // Setup SSH credentials and overrides (if any)
+    this.sshConfig = {
+      host: config.host,
+      username: config.user,
+      password: config.password,
+      privateKey: config.key,
+      ...config.ssh, // allow full override via "ssh" block
+    }
+
+    // Prepare HomeKit service instances
     this.switchService = new hap.Service.Switch(this.name)
     this.informationService = new hap.Service.AccessoryInformation()
   }
 
-  /*
-   * This method is optional to implement. It is called when HomeKit ask to identify the accessory.
-   * Typical this only ever happens at the pairing process.
+  /**
+   * Runs a shell command on the remote SSH host and returns stdout.
+   * All steps are logged. If SSH fails or the command errors, it rejects.
    */
-  identify(): void {
-    this.log("Identify!")
+  private async executeSshCommand(command: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const conn = new Client()       // Create a new SSH client
+      let result = ""                 // Will collect stdout here
+
+      this.log.debug(`[SSH] Connecting to ${this.sshConfig.username}@${this.sshConfig.host}...`)
+
+      conn.on("ready", () => {
+        this.log.debug(`[SSH] Connected. Executing: ${command}`)
+
+        // Execute the command on the remote system
+        conn.exec(command, (err, stream) => {
+          if (err) {
+            conn.end()
+            this.log.debug(`[SSH] Command execution failed: ${err.message}`)
+            return reject(err)
+          }
+
+          // Append any output from stdout to the result
+          stream.on("data", (data: Buffer) => {
+            result += data.toString()
+          })
+
+          // Log stderr separately — it doesn't fail the command
+          stream.stderr.on("data", (data: Buffer) => {
+            this.log.debug(`[SSH STDERR] ${data.toString()}`)
+          })
+
+          // Once command completes, log result and return
+          stream.on("close", (code: number, signal: string) => {
+            conn.end()
+            this.log.debug(`[SSH] Command finished (code=${code}, signal=${signal})`)
+            this.log.debug(`[SSH] Output: ${result.trim()}`)
+            resolve(result.trim())
+          })
+        })
+      })
+
+      // If SSH itself fails (connection refused, bad key), handle it here
+      conn.on("error", (err) => {
+        this.log.debug(`[SSH] Connection error: ${err.message}`)
+        reject(err)
+      })
+
+      // Start the SSH connection using the parsed config
+      conn.connect(this.sshConfig)
+    })
   }
 
-  /*
-   * This method is called directly after creation of this instance.
-   * It should return all services which should be added to the accessory.
+  /**
+   * Checks if the output from the SSH command matches the expected "on" value.
+   * Match can be exact or substring-based, depending on the config.
+   */
+  private matchOutput(output: string): boolean {
+    const normalized = output.trim().toLowerCase()
+    const matched = this.exactMatch
+      ? normalized === this.onValue
+      : normalized.includes(this.onValue)
+
+    this.log.debug(`[State Match] Output="${normalized}", Match=${matched}`)
+    return matched
+  }
+
+  /**
+   * Called by HomeKit when the user turns the switch on or off.
+   * Sends the appropriate SSH command and updates internal state.
+   */
+  private async setState(
+    powerOn: CharacteristicValue,
+    callback: CharacteristicSetCallback
+  ): Promise<void> {
+    const command = powerOn ? this.onCommand : this.offCommand
+
+    try {
+      await this.executeSshCommand(command) // Send the SSH command
+      this.powerOn = !!powerOn              // Update internal state
+      this.log.info(`[Set] ${this.name} turned ${powerOn ? "on" : "off"}`)
+      callback(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.log.info(`[Set] Failed to set ${this.name}: ${message}`)
+      callback(error instanceof Error ? error : new Error("SSH error"))
+    }
+  }
+
+  /**
+   * Called by HomeKit when it requests the current state.
+   * Runs the state command over SSH and parses the output.
+   */
+  private async getState(callback: CharacteristicGetCallback): Promise<void> {
+    try {
+      const output = await this.executeSshCommand(this.stateCommand) // Run state check
+      const isOn = this.matchOutput(output)                          // Compare result to expected
+      this.log.info(`[Get] ${this.name} is ${isOn ? "on" : "off"}`)
+      callback(null, isOn)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.log.info(`[Get] Failed to get state of ${this.name}: ${message}`)
+      callback(error instanceof Error ? error : new Error("SSH error"))
+    }
+  }
+
+  /**
+   * Called when the user taps "Identify" in the Home app.
+   * This is just for UI purposes — no state changes.
+   */
+  identify(): void {
+    this.log.info(`[Identify] ${this.name}`)
+  }
+
+  /**
+   * Called by Homebridge after the accessory is fully set up.
+   * Binds handlers, returns services, and runs an initial state sync.
    */
   getServices(): Service[] {
+    // Setup metadata for the accessory
     this.informationService
       .setCharacteristic(hap.Characteristic.Manufacturer, "SSH Manufacturer")
       .setCharacteristic(hap.Characteristic.Model, "SSH Model")
       .setCharacteristic(hap.Characteristic.SerialNumber, "SSH Serial Number")
-    let characteristic = this.switchService
+
+    // Access the "On" characteristic and bind the SET handler
+    const onCharacteristic = this.switchService
       .getCharacteristic(hap.Characteristic.On)
       .on(CharacteristicEventTypes.SET, this.setState.bind(this))
+
+    // Bind GET handler and run startup state check
     if (this.stateCommand) {
-      characteristic.on(CharacteristicEventTypes.GET, this.getState.bind(this))
+      onCharacteristic.on(CharacteristicEventTypes.GET, this.getState.bind(this))
+
+      // ✅ Initial state sync AFTER HomeKit has bound the characteristic
+      this.executeSshCommand(this.stateCommand)
+        .then((output) => {
+          const isOn = this.matchOutput(output)     // Interpret output
+          this.powerOn = isOn                       // Cache value internally
+          this.log.info(`[Startup] Initial state of ${this.name} is ${isOn ? "on" : "off"}`)
+
+          // ✅ Push the true initial state to HomeKit UI
+          onCharacteristic.updateValue(isOn)
+        })
+        .catch((err) => {
+          this.log.info(`[Startup] Failed to get initial state of ${this.name}: ${err.message}`)
+        })
     }
+
+    // Return both the info and main service
     return [this.informationService, this.switchService]
   }
 }

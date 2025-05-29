@@ -1,10 +1,14 @@
 {
   "name": "homebridge-remote-ssh",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "SSH plugin for Homebridge",
   "main": "accessory.js",
-  "keywords": ["homebridge-plugin"],
-  "engines": { "homebridge": ">=1.0.0" },
+  "keywords": [
+    "homebridge-plugin"
+  ],
+  "engines": {
+    "homebridge": ">=1.0.0"
+  },
   "scripts": {
     "clean": "rimraf node_modules/homebridge-remote-ssh",
     "build": "npm run clean && tsc && cp package.json node_modules/homebridge-remote-ssh/",
@@ -12,16 +16,16 @@
     "debug:hb": "npm run build && mkdir -p ./.homebridge-debug && node --inspect=9229 node_modules/.bin/homebridge -I -D -U ./.homebridge-debug -C ./.homebridge-debug/config.json 2>&1 | tee -a ./.homebridge-debug/homebridge.log"
   },
   "dependencies": {
-    "object-assign": "^4.1.1",
-    "remote-ssh-exec": "^1.0.0",
+    "ssh2": "^1.16.0",
     "ts-node": "^10.9.1"
   },
   "devDependencies": {
     "@types/node": "18.6.5",
+    "@types/ssh2": "^1.15.5",
     "homebridge": "^1.8.0",
+    "homebridge-config-ui-x": "^4.41.0",
     "nodemon": "^2.0.22",
     "rimraf": "^3.0.2",
-    "typescript": "^4.7.4",
-    "homebridge-config-ui-x": "^4.41.0"
+    "typescript": "^4.7.4"
   }
 }
