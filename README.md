@@ -159,7 +159,7 @@ Whenever you save a .ts in src/, nodemon will tear down the old Homebridge, rebu
     ```
 
 
-  ```json
+```json
 {
   "bridge": {...},
   "platforms": {...},
@@ -198,10 +198,29 @@ Whenever you save a .ts in src/, nodemon will tear down the old Homebridge, rebu
     }
   ]
 }
-  ```
+```
 
 ### HOW DEBUGGING ACTUALLY WORKS
 ---
   * 2 debug sessions launch
   * one to watch for changes in /dist & other to launch homebridge
   * when changes are made to files in /src folder, nodemon recompiles /dist and homebrige reloads
+
+
+
+### Weird Issues 
+---
+when launching debug config, if getting an error like this: 
+```bash
+  ...
+  was compiled against a different Node.js version using
+  NODE_MODULE_VERSION 127. This version of Node.js requires
+  NODE_MODULE_VERSION 131. Please try re-compiling or re-installing
+  ...
+```
+
+
+run this command & launch again 
+```bash 
+  npm rebuild --build-from-source node-pty
+```
